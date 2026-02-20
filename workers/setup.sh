@@ -12,20 +12,22 @@ echo "  leaky_agent — Cloudflare Worker Setup"
 echo "════════════════════════════════════════════════"
 echo ""
 
-# 0. Check wrangler
-if ! command -v wrangler &>/dev/null; then
-  echo "wrangler not found. Install with: npm install -g wrangler"
-  exit 1
+# 0. Resolve wrangler — installed globally or via npx
+if command -v wrangler &>/dev/null; then
+  WR="wrangler"
+else
+  echo "wrangler not found globally — using npx wrangler (no install needed)."
+  WR="npx --yes wrangler"
 fi
 
 # 1. Login
 echo "Step 1: Cloudflare login"
-wrangler login
+$WR login
 
 # 2. Create KV namespace
 echo ""
 echo "Step 2: Creating KV namespace 'EVENTS'…"
-KV_OUTPUT=$(wrangler kv namespace create "EVENTS" 2>&1)
+KV_OUTPUT=$($WR kv namespace create "EVENTS" 2>&1)
 echo "$KV_OUTPUT"
 
 # Try to extract the id automatically
@@ -50,7 +52,7 @@ echo "Done."
 # 4. Deploy
 echo ""
 echo "Step 4: Deploying worker…"
-wrangler deploy
+$WR deploy
 
 echo ""
 echo "════════════════════════════════════════════════"
