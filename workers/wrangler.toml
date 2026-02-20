@@ -1,0 +1,10 @@
+name            = "leaky-agent"
+main            = "src/worker.js"
+compatibility_date = "2024-09-23"
+
+# KV namespace for event storage.
+# Run: wrangler kv namespace create "EVENTS"
+# Then paste the returned id below.
+[[kv_namespaces]]
+binding = "KV"
+id      = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"

@@ -106,6 +106,22 @@
     <div class="card"><div class="card-number" id="n-days">—</div><div class="card-label">Days Active</div></div>
   </div>
 
+  <!-- Worker stats: category + source breakdown (shown only when Worker is configured) -->
+  <div id="worker-stats-section" style="display:none;">
+    <div class="panel">
+      <h3>Breaches by Category</h3>
+      <div id="category-bars" class="loading">Loading from Worker…</div>
+    </div>
+    <div class="panel">
+      <h3>Event Source</h3>
+      <p style="font-size:0.8rem;color:#888;margin-bottom:12px;">
+        <strong>canary_request</strong> = page visit logged (any agent) &nbsp;|&nbsp;
+        <strong>beacon</strong> = passive trap fired (WebFetch / no-JS agents)
+      </p>
+      <div id="source-bars" class="loading">Loading…</div>
+    </div>
+  </div>
+
   <!-- Trap type breakdown -->
   <div class="panel">
     <h3>Breaches by Trap Type</h3>
@@ -125,7 +141,8 @@
   </div>
 
   <div class="status">
-    Refreshes every 2 minutes &nbsp;|&nbsp; Reads GitHub Issues API (public, no auth) &nbsp;|&nbsp;
+    GitHub data refreshes every 2 minutes (public API, no auth) &nbsp;|&nbsp;
+    Worker data refreshes every 60 seconds (when configured) &nbsp;|&nbsp;
     Last refresh: <span id="last-refresh">—</span>
   </div>
 
@@ -286,6 +303,67 @@ function escHtml(s) {
 // Load on start, then every 2 minutes (30 req/hr — safe under 60/hr unauthenticated cap)
 loadStats();
 setInterval(loadStats, 120_000);
+
+// ── Worker stats (category + source breakdown) ──────────────────────────────
+// Only active when CONFIG.CANARY_WORKER_URL is set.
+// Reads /stats from the CF Worker (CORS-enabled, no auth required).
+// Refreshes every 60 seconds independently of the GitHub poll.
+
+async function loadWorkerStats() {
+  if (!CONFIG.CANARY_WORKER_URL) return;
+
+  document.getElementById('worker-stats-section').style.display = 'block';
+
+  try {
+    const res = await fetch(`${CONFIG.CANARY_WORKER_URL}/stats`);
+    if (!res.ok) { workerError(`Worker returned ${res.status}`); return; }
+    const data = await res.json();
+    renderWorkerStats(data);
+  } catch (err) {
+    workerError(err.message);
+  }
+}
+
+function renderWorkerStats(data) {
+  const total = data.total || 1;
+
+  // Category breakdown
+  renderBarsInEl('category-bars', data.by_category || {}, total, 'critical');
+
+  // Source breakdown
+  renderBarsInEl('source-bars', data.by_source || {}, total, 'high');
+}
+
+function renderBarsInEl(elId, counts, total, cls) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!Object.keys(counts).length) {
+    el.innerHTML = '<p class="loading">No data yet.</p>';
+    return;
+  }
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  el.innerHTML = sorted.map(([label, count]) => {
+    const pct = total > 0 ? (count / total) * 100 : 0;
+    return `
+      <div class="bar-row">
+        <div>${escHtml(label)}</div>
+        <div class="bar-track">
+          <div class="bar-fill severity-${cls}" style="width:${pct.toFixed(1)}%"></div>
+        </div>
+        <div class="bar-count">${count}</div>
+      </div>`;
+  }).join('');
+}
+
+function workerError(msg) {
+  ['category-bars', 'source-bars'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = `<div class="error-msg">⚠️ ${escHtml(msg)}</div>`;
+  });
+}
+
+loadWorkerStats();
+setInterval(loadWorkerStats, 60_000);
 </script>
 </body>
 </html>

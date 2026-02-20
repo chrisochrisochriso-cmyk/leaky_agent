@@ -416,9 +416,48 @@
     return 'Unknown';
   }
 
+  // ── Cloudflare Worker integration ─────────────────────────────────────────
+  // Fetches a unique per-visit SCAN-{hex8} canary from the Worker (if configured)
+  // and injects a simple zero-auth beacon GET URL for passive/WebFetch agents.
+  async function initWorkerCanary() {
+    if (!CONFIG.CANARY_WORKER_URL) return;
+
+    // Fetch a unique canary for this page visit (also logs the visit to KV)
+    try {
+      const res = await fetch(`${CONFIG.CANARY_WORKER_URL}/canary`);
+      if (res.ok) {
+        const { canary } = await res.json();
+        if (canary) {
+          TRAP_CANARIES['prompt_injection'] = canary;
+          injectCanaryIntoPage(); // re-inject with Worker-issued canary
+        }
+      }
+    } catch (_) {}
+
+    // Inject the beacon GET URL for passive agents (uses locally-generated BEACON-xxx)
+    updateBeaconUrl();
+  }
+
+  function updateBeaconUrl() {
+    if (!CONFIG.CANARY_WORKER_URL) return;
+    const canary = getTrapCanary('passive_beacon');
+    const beaconUrl =
+      `${CONFIG.CANARY_WORKER_URL}/beacon` +
+      `?canary=${encodeURIComponent(canary)}` +
+      `&trap=passive_beacon&severity=critical&category=injection`;
+
+    // Show the beacon URL block and populate it
+    const block = document.getElementById('beacon-url-block');
+    if (block) block.style.display = 'block';
+    document.querySelectorAll('.beacon-get-url').forEach(el => {
+      el.textContent = beaconUrl;
+    });
+  }
+
   // ── Init ───────────────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
     injectCanaryIntoPage();
     updateStatsFooter();
+    initWorkerCanary(); // async — updates canaries and beacon URL when Worker responds
   });
 })();

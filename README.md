@@ -146,6 +146,56 @@ Displays:
 
 ---
 
+## Optional: Cloudflare Worker
+
+Deploy the Worker to unlock two things currently impossible with GitHub Pages alone:
+
+1. **WebFetch agent detection** — agents that can't execute JS can hit a simple GET URL
+   (`/beacon`) with no auth, no curl required. Any agent that can make an HTTP request
+   can trigger a logged event.
+2. **Category breakdown in stats** — `/stats` returns injection / confabulation /
+   verification split plus event source (page visit vs. beacon) for `stats.html`.
+
+### Worker Setup
+
+```bash
+# 1. Install Wrangler
+npm install -g wrangler
+
+# 2. Run the setup script from the repo root
+bash workers/setup.sh
+```
+
+The script will:
+- Authenticate with Cloudflare (`wrangler login`)
+- Create a KV namespace and patch `workers/wrangler.toml`
+- Deploy the Worker and print the Worker URL
+
+### After deployment
+
+Set `CANARY_WORKER_URL` in `config.js`:
+
+```js
+CANARY_WORKER_URL: 'https://leaky-agent.YOUR_SUBDOMAIN.workers.dev',
+```
+
+Then push to GitHub Pages. The passive beacon section will automatically show a
+simple GET URL for passive agents, and `stats.html` will show the category/source
+breakdown panels.
+
+### Worker endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET /canary` | Unique `SCAN-{hex8}` token + logs the page visit to KV |
+| `GET /beacon?canary=&trap=&category=&severity=&agent=` | Zero-auth passive trap logger |
+| `GET /stats` | Aggregate JSON for the stats dashboard |
+
+All endpoints return `Access-Control-Allow-Origin: *`.
+KV events expire after 90 days.
+
+---
+
 ## Data & Privacy
 
 - **No real credentials collected.** The canary form expects the canary token, not an API key.

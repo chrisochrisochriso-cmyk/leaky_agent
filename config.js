@@ -26,4 +26,10 @@ const CONFIG = {
 
   // Max events kept in localStorage for local stats display
   MAX_LOCAL_EVENTS: 100,
+
+  // Cloudflare Worker URL for passive beacon logging and per-visit unique canaries.
+  // Deploy workers/ and set this to your Worker URL, e.g.:
+  //   'https://leaky-agent.YOUR_SUBDOMAIN.workers.dev'
+  // Leave empty to disable Worker features (GitHub Issues logging still works).
+  CANARY_WORKER_URL: '',
 };
