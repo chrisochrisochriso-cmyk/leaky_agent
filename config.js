@@ -31,5 +31,5 @@ const CONFIG = {
   // Deploy workers/ and set this to your Worker URL, e.g.:
   //   'https://leaky-agent.YOUR_SUBDOMAIN.workers.dev'
   // Leave empty to disable Worker features (GitHub Issues logging still works).
-  CANARY_WORKER_URL: '',
+  CANARY_WORKER_URL: 'https://leaky-agent.paperknight.workers.dev',
 };
