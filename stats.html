@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>leaky_agent — Stats Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f5f6f8;
+      color: #1a1a2e;
+      padding: 24px 20px 60px;
+    }
+    .container { max-width: 1000px; margin: 0 auto; }
+
+    h1 { font-size: 1.5rem; margin-bottom: 6px; }
+    .subtitle { color: #666; font-size: 0.9rem; margin-bottom: 28px; }
+    .subtitle a { color: #0066cc; }
+
+    /* ── Summary cards ── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.07);
+      text-align: center;
+    }
+    .card-number { font-size: 2.2rem; font-weight: 700; color: #dc3545; }
+    .card-label  { font-size: 0.78rem; color: #666; margin-top: 6px; text-transform: uppercase; letter-spacing: .04em; }
+
+    /* ── Panels ── */
+    .panel {
+      background: #fff;
+      border-radius: 8px;
+      padding: 22px 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.07);
+    }
+    .panel h3 { font-size: 0.95rem; margin-bottom: 16px; text-transform: uppercase; letter-spacing: .04em; color: #555; }
+
+    /* ── Bar chart rows ── */
+    .bar-row {
+      display: grid;
+      grid-template-columns: 180px 1fr 48px;
+      align-items: center;
+      gap: 12px;
+      padding: 7px 0;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 0.87rem;
+    }
+    .bar-row:last-child { border-bottom: none; }
+    .bar-track { background: #f0f0f0; border-radius: 4px; height: 14px; }
+    .bar-fill  { background: #dc3545; border-radius: 4px; height: 14px; min-width: 4px; transition: width .4s; }
+    .bar-fill.severity-high     { background: #fd7e14; }
+    .bar-fill.severity-medium   { background: #ffc107; }
+    .bar-fill.severity-unknown  { background: #6c757d; }
+    .bar-count { text-align: right; color: #666; }
+
+    /* ── Recent events ── */
+    .event-row { padding: 9px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.84rem; }
+    .event-row:last-child { border-bottom: none; }
+    .event-time { color: #aaa; font-size: 0.78rem; }
+    .sev-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 3px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      vertical-align: middle;
+    }
+    .sev-critical { background: #ffe0e0; color: #9b1c1c; }
+    .sev-high     { background: #fff3cd; color: #856404; }
+    .sev-medium   { background: #e8f4e8; color: #2d7a2d; }
+    .sev-unknown  { background: #e8e8e8; color: #555; }
+
+    /* ── Status ── */
+    .status { font-size: 0.8rem; color: #999; text-align: center; margin-top: 20px; }
+    .status a { color: #0066cc; }
+    .error-msg { color: #dc3545; background: #ffe0e0; padding: 12px; border-radius: 5px; font-size: 0.85rem; }
+    .loading   { color: #aaa; font-size: 0.87rem; padding: 12px 0; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>🍯 leaky_agent — Stats Dashboard</h1>
+  <p class="subtitle">
+    Live aggregate data from the AI agent security honeypot.
+    <a href="/">Back to honeypot</a> &nbsp;|&nbsp;
+    <a href="https://github.com/chrisochrisochriso-cmyk/leaky_agent">Source →</a>
+  </p>
+
+  <!-- Summary cards -->
+  <div class="cards">
+    <div class="card"><div class="card-number" id="n-total">—</div><div class="card-label">Total Events</div></div>
+    <div class="card"><div class="card-number" id="n-agents">—</div><div class="card-label">Unique Agent Types</div></div>
+    <div class="card"><div class="card-number" id="n-critical">—</div><div class="card-label">Critical Breaches</div></div>
+    <div class="card"><div class="card-number" id="n-days">—</div><div class="card-label">Days Active</div></div>
+  </div>
+
+  <!-- Trap type breakdown -->
+  <div class="panel">
+    <h3>Breaches by Trap Type</h3>
+    <div id="trap-bars" class="loading">Loading from GitHub…</div>
+  </div>
+
+  <!-- Agent type breakdown -->
+  <div class="panel">
+    <h3>Breaches by Agent</h3>
+    <div id="agent-bars" class="loading">Loading…</div>
+  </div>
+
+  <!-- Recent events -->
+  <div class="panel">
+    <h3>Recent Events (last 20)</h3>
+    <div id="recent-events" class="loading">Loading…</div>
+  </div>
+
+  <div class="status">
+    Refreshes every 2 minutes &nbsp;|&nbsp; Reads GitHub Issues API (public, no auth) &nbsp;|&nbsp;
+    Last refresh: <span id="last-refresh">—</span>
+  </div>
+
+</div><!-- /container -->
+
+<script src="config.js"></script>
+<script>
+// stats.html — reads breach events from GitHub Issues comments
+// Public read, no auth required for public repos.
+// Rate limit: 60 unauthenticated requests/hr.
+// With 120s refresh: 30 req/hr — well within budget.
+
+const COMMENTS_URL =
+  `https://api.github.com/repos/${CONFIG.GITHUB_REPO}/issues/${CONFIG.BREACH_LOG_ISSUE}/comments?per_page=100`;
+
+// Parse our structured JSON payload from a comment body
+function parseComment(body) {
+  try {
+    const m = body.match(/```json\s*([\s\S]*?)```/);
+    if (!m) return null;
+    return JSON.parse(m[1]);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function loadStats() {
+  try {
+    // Paginate comments (100 per page, follow Link header if needed)
+    let allEvents = [];
+    let url = COMMENTS_URL;
+
+    while (url) {
+      const res = await fetch(url, {
+        headers: { Accept: 'application/vnd.github.v3+json' },
+      });
+
+      if (!res.ok) {
+        const msg = res.status === 404
+          ? 'Breach log issue not found. Check BREACH_LOG_ISSUE in config.js.'
+          : res.status === 403
+          ? 'Rate limited. Try again in a minute.'
+          : `GitHub API error ${res.status}.`;
+        showError(msg);
+        return;
+      }
+
+      const comments = await res.json();
+      const events = comments.map(c => parseComment(c.body)).filter(Boolean);
+      allEvents = allEvents.concat(events);
+
+      // Follow pagination
+      const link = res.headers.get('Link') || '';
+      const next = link.match(/<([^>]+)>;\s*rel="next"/);
+      url = next ? next[1] : null;
+    }
+
+    renderStats(allEvents);
+    document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString();
+
+  } catch (err) {
+    showError(`Failed to load: ${err.message}. Ensure the repo is public and issue ${CONFIG.BREACH_LOG_ISSUE} exists.`);
+  }
+}
+
+function renderStats(events) {
+  const total    = events.length;
+  const critical = events.filter(e => e.severity === 'critical').length;
+  const agentSet = new Set(events.map(e => e.agent || 'Unknown'));
+
+  // Days active
+  const timestamps = events.map(e => new Date(e.timestamp)).filter(d => !isNaN(d));
+  let daysActive = '—';
+  if (timestamps.length) {
+    const oldest = Math.min(...timestamps.map(d => d.getTime()));
+    daysActive = Math.max(1, Math.ceil((Date.now() - oldest) / 86400000));
+  }
+
+  document.getElementById('n-total').textContent    = total;
+  document.getElementById('n-agents').textContent   = agentSet.size;
+  document.getElementById('n-critical').textContent = critical;
+  document.getElementById('n-days').textContent     = daysActive;
+
+  // Trap breakdown
+  const trapCounts = {};
+  events.forEach(e => {
+    trapCounts[e.trap] = (trapCounts[e.trap] || 0) + 1;
+  });
+  renderBars('trap-bars', trapCounts, total, 'critical');
+
+  // Agent breakdown
+  const agentCounts = {};
+  events.forEach(e => {
+    const a = e.agent || 'Unknown';
+    agentCounts[a] = (agentCounts[a] || 0) + 1;
+  });
+  renderBars('agent-bars', agentCounts, total, 'high');
+
+  // Recent events
+  const recent = events.slice(-20).reverse();
+  if (!recent.length) {
+    document.getElementById('recent-events').innerHTML =
+      '<p style="color:#aaa;font-size:.85rem;">No events yet. Send your agent to <a href="/">leaky_agent</a>!</p>';
+    return;
+  }
+
+  const rows = recent.map(e => {
+    const sev = (e.severity || 'unknown').toLowerCase();
+    const ts  = e.timestamp ? new Date(e.timestamp).toLocaleString() : '?';
+    return `
+      <div class="event-row">
+        <span class="event-time">${escHtml(ts)}</span> &nbsp;
+        <span class="sev-badge sev-${sev}">${escHtml(sev)}</span> &nbsp;
+        <strong>${escHtml(e.trap || '?')}</strong>
+        &nbsp;— ${escHtml(e.agent || 'Unknown')}
+        &nbsp;<code style="font-size:.78rem;color:#888;">${escHtml(e.canary || '')}</code>
+      </div>
+    `;
+  }).join('');
+  document.getElementById('recent-events').innerHTML = rows;
+}
+
+function renderBars(containerId, counts, total, defaultSevClass) {
+  const el = document.getElementById(containerId);
+  if (!Object.keys(counts).length) {
+    el.innerHTML = '<p class="loading">No data yet.</p>';
+    return;
+  }
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  el.innerHTML = sorted.map(([label, count]) => {
+    const pct   = total > 0 ? (count / total) * 100 : 0;
+    return `
+      <div class="bar-row">
+        <div>${escHtml(label)}</div>
+        <div class="bar-track">
+          <div class="bar-fill severity-${defaultSevClass}" style="width:${pct.toFixed(1)}%"></div>
+        </div>
+        <div class="bar-count">${count}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function showError(msg) {
+  ['trap-bars', 'agent-bars', 'recent-events'].forEach(id => {
+    document.getElementById(id).innerHTML = `<div class="error-msg">⚠️ ${escHtml(msg)}</div>`;
+  });
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Load on start, then every 2 minutes (30 req/hr — safe under 60/hr unauthenticated cap)
+loadStats();
+setInterval(loadStats, 120_000);
+</script>
+</body>
+</html>

@@ -1,0 +1,114 @@
+name: Bootstrap Breach Log
+
+# Runs once on first push and can be triggered manually.
+# Its only job: ensure the pinned "Breach Log" issue exists.
+# All actual data flows through the GitHub Issues API from tracker.js —
+# no Action needed to collect events. The Action just idempotently
+# creates the anchor issue so tracker.js has somewhere to comment.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Create breach-log label (idempotent)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create "breach-log" \
+            --repo "${{ github.repository }}" \
+            --color "d73a4a" \
+            --description "leaky_agent breach event log" \
+            2>/dev/null || true   # already exists → skip, not an error
+
+      - name: Check for existing Breach Log issue
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Look for the pinned breach log issue by title
+          EXISTING=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --label breach-log \
+            --json number \
+            --jq '.[0].number // empty')
+
+          if [ -n "$EXISTING" ]; then
+            echo "Breach log issue already exists: #$EXISTING"
+            echo "issue_number=$EXISTING" >> "$GITHUB_OUTPUT"
+          else
+            echo "issue_number=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create Breach Log issue (if missing)
+        if: steps.check.outputs.issue_number == ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "📊 Breach Event Log (Do Not Close)" \
+            --label "breach-log" \
+            --body "$(cat <<'EOF'
+          ## leaky_agent — Live Breach Events
+
+          Each comment on this issue represents one trap trigger from a visiting agent.
+          Comments are posted by \`tracker.js\` via the GitHub Issues API.
+
+          **Format:** Each comment contains a JSON payload in a code block:
+          \`\`\`
+          {
+            "canary":    "BREACH-XXXXXXXX",   // unique per page load
+            "trap":      "prompt_injection",   // which trap fired
+            "severity":  "critical",
+            "agent":     "Claude",             // identified from User-Agent
+            "timestamp": "2024-01-01T00:00:00.000Z",
+            "referrer":  "direct"
+          }
+          \`\`\`
+
+          The breach token (\`canary\`) proves the agent read the injected content —
+          it will appear verbatim in the agent's output to its user.
+
+          **Stats dashboard:** See \`/stats.html\` for aggregate visualizations.
+
+          ---
+          *This issue is maintained by [leaky_agent](https://github.com/${{ github.repository }}).
+          Do not close — it is the data anchor for the stats dashboard.*
+          EOF
+          )"
+
+          # Pin it for visibility
+          ISSUE_NUM=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --label breach-log \
+            --json number \
+            --jq '.[0].number')
+          echo "Created breach log issue #$ISSUE_NUM"
+
+      - name: Update config reminder
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUM=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --label breach-log \
+            --json number \
+            --jq '.[0].number')
+          echo ""
+          echo "═══════════════════════════════════════════════════"
+          echo "  Breach log issue: #$ISSUE_NUM"
+          echo "  Update BREACH_LOG_ISSUE in config.js to: $ISSUE_NUM"
+          echo "  Then generate a token with issues:write scope and"
+          echo "  set PUBLIC_TOKEN in config.js."
+          echo "═══════════════════════════════════════════════════"
