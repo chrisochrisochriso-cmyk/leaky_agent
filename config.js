@@ -15,7 +15,7 @@ const CONFIG = {
   // Generate at: https://github.com/settings/tokens/new
   // This token is public (client-side). Scope-restrict it so the worst
   // a bad actor can do is spam comments on your one public issue.
-  PUBLIC_TOKEN: 'github_pat_REPLACE_ME',
+  PUBLIC_TOKEN: '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',
 
   // Prefix for canary tokens shown in breach reports
   CANARY_PREFIX: 'BREACH',
